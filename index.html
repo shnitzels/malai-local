@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f2e9">
+  <meta name="description" content="מלאי ביתי חכם, פרטי ומקומי">
+  <title>מָלֵא — המלאי הביתי שלי</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%231f5a43'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='white'%3Eמ%3C/text%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">מ</span><div><strong>מָלֵא</strong><small>המלאי הביתי שלי</small></div></div>
+      <button class="icon-btn" id="settingsBtn" aria-label="הגדרות">⚙</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div><p class="eyebrow" id="greeting">מה יש בבית?</p><h1>הכול במקום.<br><em>הכול בשליטה.</em></h1></div>
+        <div class="hero-count"><strong id="totalItems">0</strong><span>פריטים במלאי</span></div>
+      </section>
+
+      <section class="command-card" aria-label="עוזר חכם">
+        <div class="assistant-head"><span class="pulse-dot"></span><div><strong>העוזר של מָלֵא</strong><small id="assistantStatus">אפשר לכתוב או לדבר אליי</small></div></div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="command-row">
+          <button id="micBtn" class="mic-btn" aria-label="הקלטה קולית"><span>🎙</span></button>
+          <input id="commandInput" type="text" autocomplete="off" placeholder="למשל: הוספתי 2 קילו בשר טחון...">
+          <button id="sendBtn" class="send-btn" aria-label="שליחה">←</button>
+        </div>
+        <div class="quick-commands">
+          <button data-command="מה יש לי במקפיא?">מה יש במקפיא?</button>
+          <button data-command="מה עומד להיגמר?">מה עומד להיגמר?</button>
+        </div>
+      </section>
+
+      <section class="stats-grid" id="statsGrid"></section>
+
+      <section class="inventory-section">
+        <div class="section-head"><div><p class="eyebrow">המלאי שלי</p><h2>כל מה שיש בבית</h2></div><button class="primary-btn" id="addItemBtn">＋ פריט</button></div>
+        <div class="filters">
+          <label class="search"><span>⌕</span><input id="searchInput" placeholder="חיפוש במלאי"></label>
+          <select id="storageFilter" aria-label="סינון לפי מקום"><option value="all">כל המקומות</option></select>
+          <select id="categoryFilter" aria-label="סינון לפי קטגוריה"><option value="all">כל הסוגים</option></select>
+        </div>
+        <div id="inventoryList" class="inventory-list"></div>
+      </section>
+
+      <section class="storage-section">
+        <div class="section-head"><div><p class="eyebrow">מקומות אחסון</p><h2>הבית שלי</h2></div><button class="text-btn" id="addStorageBtn">＋ מקום חדש</button></div>
+        <div id="storageList" class="storage-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="itemDialog">
+    <form id="itemForm" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">עדכון המלאי</p><h2 id="itemDialogTitle">פריט חדש</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <input type="hidden" id="itemId">
+      <label>שם הפריט<input id="itemName" required placeholder="למשל בשר טחון"></label>
+      <div class="form-grid"><label>כמות<input id="itemQuantity" type="number" min="0" step="any" required value="1"></label><label>יחידה<select id="itemUnit"><option>יחידות</option><option>ק״ג</option><option>גרם</option><option>ליטר</option><option>מארזים</option><option>מנות</option></select></label></div>
+      <label>קטגוריה<select id="itemCategory"><option>מזון לבישול</option><option>מזון מוכן</option><option>ירקות ופירות</option><option>מוצרי חלב</option><option>לחם ומאפים</option><option>מזווה</option><option>אחר</option></select></label>
+      <label>מקום אחסון<select id="itemStorage" required></select></label>
+      <label>הערה<input id="itemNote" placeholder="אופציונלי"></label>
+      <button class="submit-btn" value="default">שמירה</button>
+    </form>
+  </dialog>
+
+  <dialog id="storageDialog">
+    <form id="storageForm" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">הבית שלי</p><h2>מקום אחסון חדש</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <label>שם המקום<input id="storageName" required placeholder="למשל המקפיא בחדר כביסה"></label>
+      <label>סוג<select id="storageType"><option value="freezer">מקפיא</option><option value="fridge">מקרר</option><option value="pantry">ארון / מזווה</option><option value="other">אחר</option></select></label>
+      <button class="submit-btn" value="default">הוספה</button>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog">
+    <form id="settingsForm" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">הגדרות</p><h2>OpenAI</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <p class="help">המפתח נשמר רק בדפדפן הזה ונשלח ישירות ל‑OpenAI. אפשר גם לפתוח את האתר עם <code>?token=...</code>; הפרמטר יימחק מיד משורת הכתובת.</p>
+      <label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="sk-..."></label>
+      <label>מודל<input id="modelName" value="gpt-4.1-mini"></label>
+      <button class="submit-btn" value="default">שמירה</button>
+      <button type="button" class="danger-text" id="clearDataBtn">מחיקת כל הנתונים המקומיים</button>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

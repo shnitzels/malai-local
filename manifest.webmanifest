@@ -1,0 +1,10 @@
+{
+  "name": "מָלֵא — המלאי הביתי שלי",
+  "short_name": "מָלֵא",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f2e9",
+  "theme_color": "#1f5a43",
+  "lang": "he",
+  "dir": "rtl"
+}
