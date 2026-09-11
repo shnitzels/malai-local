@@ -2,6 +2,7 @@
   'use strict';
   const DATA_KEY = 'malai:data:v1';
   const SETTINGS_KEY = 'malai:settings:v1';
+  const HISTORY_KEY = 'malai:history:v1';
   const MODELS = Object.freeze({
     agent: 'gpt-5.6-luna',
     speech: 'gpt-4o-mini-tts'
@@ -32,7 +33,9 @@
     updatedAt: new Date().toISOString()
   });
   let state = loadJSON(DATA_KEY, null) || defaultState();
-  let settings = loadJSON(SETTINGS_KEY, { apiKey:'' });
+  let settings = {apiKey:'',muted:false,...loadJSON(SETTINGS_KEY, {})};
+  let history = loadJSON(HISTORY_KEY, []);
+  if(!Array.isArray(history))history=[];
   let recognition = null, recognitionTranscript = '', currentAudio = null, audioUrl = '';
   let voicePressActive = false;
   let voiceSession = 0;
@@ -40,12 +43,13 @@
   const voiceStates = {
     ready: ['מוכנה', 'אפשר להתחיל לדבר', 'לחצו והחזיקו בזמן הדיבור'],
     recording: ['מקליטה', 'אני מקשיבה…', 'שחררו כדי לשלוח'],
-    transcribing: ['מתמללת', 'הופכת את הקול לטקסט…', 'עוד רגע ממשיכים'],
+    transcribing: ['הדיבור נקלט', 'מעבירה את הבקשה לסוכנת…', 'עוד רגע ממשיכים'],
     thinking: ['חושבת ופועלת', 'בודקת ומעדכנת את המלאי…', 'הסוכנת משתמשת במלאי המקומי'],
     speaking: ['עונה', 'התשובה בדרך אליכם', 'אפשר לעצור בסגירת החלון'],
     success: ['בוצע', 'המלאי מעודכן', 'אפשר להמשיך לדבר'],
     error: ['לא הסתדר', 'אפשר לנסות שוב', 'או לעבור לכתיבה']
   };
+  const voiceStateIcons={ready:'mic',recording:'mic',transcribing:'captions',thinking:'sparkles',speaking:'volume-2',success:'check',error:'triangle-alert'};
 
   // Capture a one-time token, then remove all sensitive parameters before rendering.
   const incoming = new URL(location.href);
@@ -61,6 +65,10 @@
   function loadJSON(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
   function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
   function persist() { state.updatedAt = new Date().toISOString(); saveJSON(DATA_KEY, state); render(); }
+  const cloneState=()=>JSON.parse(JSON.stringify(state));
+  function updateUndoButton(){const button=$('#undoBtn');if(button){button.disabled=!history.length;button.title=history.length?`ביטול: ${history[history.length-1].description}`:'אין שינוי לבטל';}}
+  function rememberSnapshot(snapshot,description){history.push({state:snapshot,description,at:new Date().toISOString()});history=history.slice(-10);saveJSON(HISTORY_KEY,history);updateUndoButton();}
+  function describeActions(actions){return actions.filter(a=>a.type!=='none').map(a=>({add_storage:`הוספת מקום האחסון ${a.storage_name}`,add_item:`הוספת ${a.quantity||1} ${a.unit||'יחידות'} ${a.item_name}`,consume_item:`שימוש ב־${a.quantity||'כל הכמות של'} ${a.item_name}`,move_item:`העברת ${a.item_name} אל ${a.destination_name}`,update_item:`עדכון ${a.item_name}`,delete_item:`מחיקת ${a.item_name}`}[a.type])).filter(Boolean).join(', ')||'השינוי האחרון';}
   function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
   function toast(text) { const el=$('#toast'); el.textContent=text; el.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),2600); }
   function storageById(id) { return state.storages.find(s=>s.id===id); }
@@ -102,7 +110,7 @@
       const count=state.items.filter(i=>i.storageId===s.id).length, meta=storageMeta[s.type]||storageMeta.other;
       return `<article class="storage-card"><span class="stat-icon">${icon(meta.icon)}</span><div><strong>${esc(s.name)}</strong><small>${meta.label} · ${count} פריטים</small></div></article>`;
     }).join('');
-    refreshIcons();
+    refreshIcons();updateUndoButton();
   }
 
   function openItem(item=null) {
@@ -121,6 +129,7 @@
     $('.voice-wave').classList.toggle('active',name==='recording'||name==='speaking');
     button.disabled=['transcribing','thinking'].includes(name);
     button.setAttribute('aria-label',name==='recording'?'שחררו כדי לשלוח':'לחצו והחזיקו כדי לדבר');
+    button.innerHTML=icon(voiceStateIcons[name]||'mic');refreshIcons();
   }
   function stopCurrentAudio() {
     if(currentAudio){currentAudio.onended=null;currentAudio.onerror=null;currentAudio.pause();currentAudio.src='';currentAudio=null;}
@@ -162,7 +171,8 @@
     } finally { clearTimeout(timer); activeControllers.delete(ctrl); }
   }
 
-  async function runCommand(text, {speak=false}={}) {
+  async function runCommand(text, {speak:requestedSpeak=true}={}) {
+    const speak=requestedSpeak&&!settings.muted;
     text=text.trim(); if(!text)return; const session=voiceSession;
     addMessage(text,'user'); $('#commandInput').value=''; setBusy(true);
     if(speak)setVoiceState('thinking',text);
@@ -174,10 +184,10 @@
       const data=await openAI('chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODELS.agent,messages:[{role:'system',content:system},{role:'user',content:text}],response_format:{type:'json_schema',json_schema:schema}})});
       if(speak&&session!==voiceSession)return;
       const result=JSON.parse(data.choices?.[0]?.message?.content||'{}');
-      const changed=applyActions(result.actions||[]);
+      const before=cloneState(),actions=result.actions||[],changed=applyActions(actions);
       const reply=result.reply || (changed?'בוצע. המלאי עודכן.':'לא מצאתי פעולה לבצע.');
       addMessage(reply);
-      if(changed){ persist(); toast('המלאי עודכן'); }
+      if(changed){rememberSnapshot(before,describeActions(actions));persist();toast('המלאי עודכן');}
       if(speak){setVoiceState('success',reply);await speakAnswer(reply);}
       return reply;
     } catch(err) { if(speak&&session!==voiceSession)return;const message=err.name==='AbortError'?'הבקשה הופסקה. אפשר לנסות שוב.':err.message;addMessage(message);if(speak)setVoiceState('error',message); }
@@ -229,7 +239,7 @@
     const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!Recognition){const message='זיהוי דיבור מובנה אינו נתמך בדפדפן הזה. אפשר להשתמש בשורת הטקסט.';setVoiceState('error',message);toast(message);return;}
     if(!settings.apiKey){const message='כדי שהסוכנת תפעל צריך מפתח OpenAI מקומי. אפשר לעבור לכתיבה.';setVoiceState('error',message);toast(message);$('#settingsDialog').showModal();return;}
-    stopCurrentAudio();const session=voiceSession;recognitionTranscript='';recognition=new Recognition();
+    voiceSession++;activeControllers.forEach(ctrl=>ctrl.abort());activeControllers.clear();stopCurrentAudio();const session=voiceSession;recognitionTranscript='';recognition=new Recognition();
     recognition.lang='he-IL';recognition.interimResults=true;recognition.continuous=true;
     recognition.onstart=()=>{if(session!==voiceSession)return;if(!voicePressActive){recognition.stop();return;}$('#assistantStatus').textContent='מקשיבה… שחררו כדי לשלוח';setVoiceState('recording');};
     recognition.onresult=e=>{recognitionTranscript=Array.from(e.results).map(result=>result[0]?.transcript||'').join(' ').trim();if(session===voiceSession)setVoiceState('recording',recognitionTranscript||'שחררו כדי לשלוח');};
@@ -238,13 +248,20 @@
     try{recognition.start();}catch{recognition=null;setVoiceState('error','לא הצלחתי להפעיל את זיהוי הדיבור. נסו שוב.');}
   }
 
-  $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#settingsDialog').showModal(); };
+  async function undoLast(){
+    const entry=history.pop();if(!entry){toast('אין שינוי לבטל');return;}
+    voiceSession++;activeControllers.forEach(ctrl=>ctrl.abort());activeControllers.clear();stopCurrentAudio();
+    state=entry.state;saveJSON(HISTORY_KEY,history);persist();
+    const message=`ביטלתי: ${entry.description}`;addMessage(message);toast(message);setVoiceState('success',message);if(!settings.muted)await speakAnswer(message);
+  }
+
+  $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#muteVoice').checked=!!settings.muted;$('#settingsDialog').showModal(); };$('#undoBtn').onclick=undoLast;
   $$('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
-  $('#itemForm').onsubmit=e=>{e.preventDefault();const id=$('#itemId').value, item={id:id||uid(),name:$('#itemName').value.trim(),quantity:Number($('#itemQuantity').value),unit:$('#itemUnit').value,category:$('#itemCategory').value,storageId:$('#itemStorage').value,note:$('#itemNote').value.trim(),createdAt:new Date().toISOString()};const idx=state.items.findIndex(i=>i.id===id);if(idx>=0)state.items[idx]={...state.items[idx],...item};else state.items.unshift(item);$('#itemDialog').close();persist();toast('הפריט נשמר');};
-  $('#storageForm').onsubmit=e=>{e.preventDefault();state.storages.push({id:uid(),name:$('#storageName').value.trim(),type:$('#storageType').value});e.target.reset();$('#storageDialog').close();persist();toast('המקום נוסף');};
-  $('#settingsForm').onsubmit=e=>{e.preventDefault();settings={apiKey:$('#apiKey').value.trim()};saveJSON(SETTINGS_KEY,settings);$('#settingsDialog').close();toast('ההגדרות נשמרו במכשיר');};
-  $('#clearDataBtn').onclick=()=>{if(confirm('למחוק את כל המלאי וההגדרות מהמכשיר הזה?')){localStorage.removeItem(DATA_KEY);localStorage.removeItem(SETTINGS_KEY);state=defaultState();settings={apiKey:''};render();$('#settingsDialog').close();toast('הנתונים נמחקו');}};
-  $('#inventoryList').onclick=e=>{const row=e.target.closest('.item-row');if(!row)return;const item=state.items.find(i=>i.id===row.dataset.id),action=e.target.closest('button')?.dataset.action;if(action==='edit')openItem(item);if(action==='delete'&&confirm(`למחוק את ${item.name}?`)){state.items=state.items.filter(i=>i.id!==item.id);persist();}if(action==='consume'){const value=prompt(`כמה ${item.unit} השתמשת?`,String(item.quantity));if(value!==null){item.quantity=Math.max(0,item.quantity-Number(value||0));if(item.quantity===0)state.items=state.items.filter(i=>i.id!==item.id);persist();}}};
+  $('#itemForm').onsubmit=e=>{e.preventDefault();const id=$('#itemId').value, item={id:id||uid(),name:$('#itemName').value.trim(),quantity:Number($('#itemQuantity').value),unit:$('#itemUnit').value,category:$('#itemCategory').value,storageId:$('#itemStorage').value,note:$('#itemNote').value.trim(),createdAt:new Date().toISOString()};const idx=state.items.findIndex(i=>i.id===id);rememberSnapshot(cloneState(),idx>=0?`עריכת ${item.name}`:`הוספת ${item.name}`);if(idx>=0)state.items[idx]={...state.items[idx],...item};else state.items.unshift(item);$('#itemDialog').close();persist();toast('הפריט נשמר');};
+  $('#storageForm').onsubmit=e=>{e.preventDefault();const name=$('#storageName').value.trim();rememberSnapshot(cloneState(),`הוספת מקום האחסון ${name}`);state.storages.push({id:uid(),name,type:$('#storageType').value});e.target.reset();$('#storageDialog').close();persist();toast('המקום נוסף');};
+  $('#settingsForm').onsubmit=e=>{e.preventDefault();settings={...settings,apiKey:$('#apiKey').value.trim(),muted:$('#muteVoice').checked};saveJSON(SETTINGS_KEY,settings);if(settings.muted)stopCurrentAudio();$('#settingsDialog').close();toast(settings.muted?'התשובות הקוליות הושתקו':'התשובות הקוליות פעילות');};
+  $('#clearDataBtn').onclick=()=>{if(confirm('למחוק את כל המלאי וההגדרות מהמכשיר הזה?')){rememberSnapshot(cloneState(),'מחיקת כל המלאי');localStorage.removeItem(DATA_KEY);localStorage.removeItem(SETTINGS_KEY);state=defaultState();settings={apiKey:'',muted:false};persist();$('#settingsDialog').close();toast('הנתונים נמחקו');}};
+  $('#inventoryList').onclick=e=>{const row=e.target.closest('.item-row');if(!row)return;const item=state.items.find(i=>i.id===row.dataset.id),action=e.target.closest('button')?.dataset.action;if(action==='edit')openItem(item);if(action==='delete'&&confirm(`למחוק את ${item.name}?`)){rememberSnapshot(cloneState(),`מחיקת ${item.name}`);state.items=state.items.filter(i=>i.id!==item.id);persist();}if(action==='consume'){const value=prompt(`כמה ${item.unit} השתמשת?`,String(item.quantity));if(value!==null){rememberSnapshot(cloneState(),`שימוש ב־${value||0} ${item.unit} ${item.name}`);item.quantity=Math.max(0,item.quantity-Number(value||0));if(item.quantity===0)state.items=state.items.filter(i=>i.id!==item.id);persist();}}};
   ['searchInput','storageFilter','categoryFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));
   $('#sendBtn').onclick=()=>runCommand($('#commandInput').value); $('#commandInput').onkeydown=e=>{if(e.key==='Enter')runCommand(e.target.value);};
   const voiceTalkBtn=$('#voiceTalkBtn');
@@ -253,7 +270,7 @@
     e.preventDefault();
     if(voicePressActive)return;
     voicePressActive=true;
-    if(e.pointerId!==undefined)voiceTalkBtn.setPointerCapture?.(e.pointerId);
+    if(e.pointerId!==undefined)try{voiceTalkBtn.setPointerCapture?.(e.pointerId);}catch{}
     startVoiceRecognition();
   };
   const endVoicePress=e=>{

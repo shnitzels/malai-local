@@ -20,7 +20,10 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark"><i data-lucide="snowflake"></i></span><div><strong>מה בפריזר</strong><small>המלאי הביתי שלי</small></div></div>
-      <button class="icon-btn" id="settingsBtn" aria-label="הגדרות"><i data-lucide="settings"></i></button>
+      <div class="top-actions">
+        <button class="undo-btn" id="undoBtn" type="button" disabled aria-label="ביטול השינוי האחרון"><i data-lucide="undo-2"></i><span>ביטול</span></button>
+        <button class="icon-btn" id="settingsBtn" aria-label="הגדרות"><i data-lucide="settings"></i></button>
+      </div>
     </header>
 
     <main>
@@ -105,6 +108,7 @@
       <div class="dialog-head"><div><p class="eyebrow">הגדרות</p><h2>OpenAI</h2></div><button type="button" class="close-btn" data-close><i data-lucide="x"></i></button></div>
       <p class="help">המפתח נשמר רק בדפדפן הזה ונשלח ישירות ל‑OpenAI. אפשר גם לפתוח את האתר עם <code>?token=...</code>; הפרמטר יימחק מיד משורת הכתובת.</p>
       <label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="sk-..."></label>
+      <label class="toggle-row"><input id="muteVoice" type="checkbox"> <span>השתקת תשובות קוליות</span></label>
       <p class="help">זיהוי הדיבור בעברית מתבצע על ידי הדפדפן. המודלים מוגדרים מראש: GPT‑5.6 Luna לסוכנת ו‑GPT‑4o Mini TTS להקראה.</p>
       <button class="submit-btn" value="default">שמירה</button>
       <button type="button" class="danger-text" id="clearDataBtn">מחיקת כל הנתונים המקומיים</button>
