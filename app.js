@@ -121,7 +121,7 @@
     $('#voiceTranscript').textContent=detail||values[2]; button.classList.remove(...Object.keys(voiceStates)); button.classList.add(name);
     $('.voice-wave').classList.toggle('active',name==='recording'||name==='speaking');
     button.disabled=['transcribing','thinking'].includes(name);
-    button.setAttribute('aria-label',name==='recording'?'סיום הקלטה':'התחלת הקלטה');
+    button.setAttribute('aria-label',name==='recording'?'שחררו כדי לשלוח':'לחצו והחזיקו כדי לדבר');
   }
   function stopCurrentAudio() {
     if(currentAudio){currentAudio.onended=null;currentAudio.onerror=null;currentAudio.pause();currentAudio.src='';currentAudio=null;}
@@ -135,7 +135,7 @@
   }
 
   async function openAI(path, options) {
-    if (!settings.apiKey) { if(!$('#voiceDialog').open)$('#settingsDialog').showModal(); throw new Error('צריך להוסיף OpenAI API Key בהגדרות'); }
+    if (!settings.apiKey) { $('#settingsDialog').showModal(); throw new Error('צריך להוסיף OpenAI API Key בהגדרות'); }
     const ctrl=new AbortController(), timer=setTimeout(()=>ctrl.abort(),45000); activeControllers.add(ctrl);
     try {
       const res=await fetch(`https://api.openai.com/v1/${path}`,{...options,headers:{Authorization:`Bearer ${settings.apiKey}`,...options.headers},signal:ctrl.signal});
@@ -218,19 +218,45 @@
     return changed;
   }
 
+  function shouldUseWavRecorder() {
+    return /iP(?:hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  }
+
+  function wavBlob(chunks, sampleRate) {
+    const length=chunks.reduce((sum,chunk)=>sum+chunk.length,0), buffer=new ArrayBuffer(44+length*2), view=new DataView(buffer);
+    const text=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i));};
+    text(0,'RIFF');view.setUint32(4,36+length*2,true);text(8,'WAVE');text(12,'fmt ');view.setUint32(16,16,true);
+    view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);
+    view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,length*2,true);
+    let offset=44;
+    chunks.forEach(chunk=>chunk.forEach(value=>{const sample=Math.max(-1,Math.min(1,value));view.setInt16(offset,sample<0?sample*0x8000:sample*0x7fff,true);offset+=2;}));
+    return new Blob([buffer],{type:'audio/wav'});
+  }
+
+  function createWavRecorder(stream) {
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    const context=new AudioContextClass(), source=context.createMediaStreamSource(stream), processor=context.createScriptProcessor(4096,1,1), silence=context.createGain(), chunks=[];
+    silence.gain.value=0;
+    const api={stream,state:'inactive',mimeType:'audio/wav',ondataavailable:null,onstop:null,
+      start(){api.state='recording';processor.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));source.connect(processor);processor.connect(silence);silence.connect(context.destination);context.resume?.();},
+      stop(){if(api.state!=='recording')return;api.state='inactive';processor.disconnect();source.disconnect();silence.disconnect();processor.onaudioprocess=null;context.close?.();const data=wavBlob(chunks,context.sampleRate);api.ondataavailable?.({data});queueMicrotask(()=>api.onstop?.());}
+    };
+    return api;
+  }
+
   async function toggleRecording(voiceMode=false) {
     if(recorder?.state==='recording')return;
-    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
+    if(!navigator.mediaDevices?.getUserMedia||(!window.MediaRecorder&&!(window.AudioContext||window.webkitAudioContext))){
       const message='הקלטה אינה נתמכת בדפדפן הזה. אפשר להשתמש בשורת הטקסט.'; toast(message); if(voiceMode)setVoiceState('error',message); return;
     }
     if(!settings.apiKey){const message='לתמלול קולי צריך מפתח OpenAI מקומי. אפשר לעבור לכתיבה בלי מפתח.';setVoiceState('error',message);toast(message);return;}
     try {
       stopCurrentAudio(); const session=voiceSession, stream=await navigator.mediaDevices.getUserMedia({audio:true});
       if(session!==voiceSession||(voiceMode&&!voicePressActive)){stream.getTracks().forEach(t=>t.stop());if(voiceMode)setVoiceState('ready');return;} audioChunks=[];
-      recorder=new MediaRecorder(stream); const recordingType=recorder.mimeType||'audio/webm'; recorder.ondataavailable=e=>e.data.size&&audioChunks.push(e.data);
+      recorder=shouldUseWavRecorder()&&window.AudioContext?createWavRecorder(stream):new MediaRecorder(stream); const recordingType=recorder.mimeType||'audio/webm'; recorder.ondataavailable=e=>e.data.size&&audioChunks.push(e.data);
       recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());recorder=null;if(session!==voiceSession)return;setBusy(true,'מתמללת את ההקלטה…');if(voiceMode)setVoiceState('transcribing');
         try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData();
-          const extension=recordingType.includes('mp4')?'m4a':recordingType.includes('mpeg')?'mp3':recordingType.includes('ogg')?'ogg':'webm';
+          const extension=recordingType.includes('wav')?'wav':recordingType.includes('mp4')?'m4a':recordingType.includes('mpeg')?'mp3':recordingType.includes('ogg')?'ogg':'webm';
           form.append('file',blob,`recording.${extension}`); form.append('model',MODELS.transcription); form.append('language','he');
           const vocabulary=[...state.storages.map(s=>s.name),...state.items.slice(0,40).map(i=>i.name)].filter(Boolean).join(', ');
           form.append('prompt',`מלאי מזון ביתי בעברית. פריזר פירושו מקפיא. פקודות לדוגמה: בפריזר יש שתי לחמניות המבורגר ושני המבורגרים; הוספתי שתי עגבניות למקרר; השתמשתי בקילו עוף; מה יש במקפיא? שמות מוכרים: ${vocabulary}`);
@@ -241,7 +267,7 @@
   }
 
   $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#settingsDialog').showModal(); };
-  $$('[data-close]').forEach(b=>b.onclick=()=>{const dialog=b.closest('dialog');if(dialog?.id==='voiceDialog')cleanupVoice();dialog.close();});
+  $$('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
   $('#itemForm').onsubmit=e=>{e.preventDefault();const id=$('#itemId').value, item={id:id||uid(),name:$('#itemName').value.trim(),quantity:Number($('#itemQuantity').value),unit:$('#itemUnit').value,category:$('#itemCategory').value,storageId:$('#itemStorage').value,note:$('#itemNote').value.trim(),createdAt:new Date().toISOString()};const idx=state.items.findIndex(i=>i.id===id);if(idx>=0)state.items[idx]={...state.items[idx],...item};else state.items.unshift(item);$('#itemDialog').close();persist();toast('הפריט נשמר');};
   $('#storageForm').onsubmit=e=>{e.preventDefault();state.storages.push({id:uid(),name:$('#storageName').value.trim(),type:$('#storageType').value});e.target.reset();$('#storageDialog').close();persist();toast('המקום נוסף');};
   $('#settingsForm').onsubmit=e=>{e.preventDefault();settings={apiKey:$('#apiKey').value.trim()};saveJSON(SETTINGS_KEY,settings);$('#settingsDialog').close();toast('ההגדרות נשמרו במכשיר');};
@@ -249,7 +275,6 @@
   $('#inventoryList').onclick=e=>{const row=e.target.closest('.item-row');if(!row)return;const item=state.items.find(i=>i.id===row.dataset.id),action=e.target.closest('button')?.dataset.action;if(action==='edit')openItem(item);if(action==='delete'&&confirm(`למחוק את ${item.name}?`)){state.items=state.items.filter(i=>i.id!==item.id);persist();}if(action==='consume'){const value=prompt(`כמה ${item.unit} השתמשת?`,String(item.quantity));if(value!==null){item.quantity=Math.max(0,item.quantity-Number(value||0));if(item.quantity===0)state.items=state.items.filter(i=>i.id!==item.id);persist();}}};
   ['searchInput','storageFilter','categoryFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));
   $('#sendBtn').onclick=()=>runCommand($('#commandInput').value); $('#commandInput').onkeydown=e=>{if(e.key==='Enter')runCommand(e.target.value);};
-  $('#voiceModeBtn').onclick=()=>{cleanupVoice();$('#voiceDialog').showModal();setVoiceState('ready');refreshIcons();};
   const voiceTalkBtn=$('#voiceTalkBtn');
   const startVoicePress=e=>{
     if(e.type==='pointerdown'&&e.button!==0)return;
@@ -269,9 +294,7 @@
   ['pointerup','pointercancel','lostpointercapture'].forEach(type=>voiceTalkBtn.addEventListener(type,endVoicePress));
   voiceTalkBtn.addEventListener('keydown',e=>{if(!e.repeat&&(e.key===' '||e.key==='Enter'))startVoicePress(e);});
   voiceTalkBtn.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')endVoicePress(e);});
-  $('#voiceTextBtn').onclick=()=>{cleanupVoice();$('#voiceDialog').close();$('#commandInput').focus();};
-  $('#voiceDialog').addEventListener('cancel',e=>{e.preventDefault();cleanupVoice();e.currentTarget.close();});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('#voiceDialog').open)cleanupVoice();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&recorder)cleanupVoice();});
   $$('.quick-commands button').forEach(b=>b.onclick=()=>runCommand(b.dataset.command));
   if(incomingToken) setTimeout(()=>toast('מפתח OpenAI נשמר והוסר מהכתובת'),200);
   render(); refreshIcons();

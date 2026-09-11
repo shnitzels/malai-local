@@ -31,10 +31,13 @@
           <h1 id="agentTitle">מה תרצו לעשות?</h1>
           <p>אפשר פשוט לדבר. אני בודקת את המלאי וגם מעדכנת אותו בשבילכם.</p>
         </div>
-        <button id="voiceModeBtn" class="voice-primary" type="button" aria-label="פתיחת שיחה קולית">
-          <span class="voice-orbit"><i data-lucide="mic"></i></span>
-          <span><strong>דברו איתי</strong><small>לחיצה לפתיחת שיחה קולית</small></span>
-        </button>
+        <div class="home-voice">
+          <span class="voice-state-label" id="voiceStateLabel">מוכנה</span>
+          <button id="voiceTalkBtn" class="voice-talk-btn" type="button" aria-label="לחצו והחזיקו כדי לדבר"><i data-lucide="mic"></i></button>
+          <p id="voiceStatus">לחצו והחזיקו כדי לדבר</p>
+          <small id="voiceTranscript">שחררו כדי לשלוח</small>
+          <div class="voice-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
         <div class="capabilities" aria-label="יכולות הסוכנת">
           <span><i data-lucide="search"></i> לבדוק</span>
           <span><i data-lucide="plus"></i> להוסיף</span>
@@ -108,17 +111,6 @@
     </form>
   </dialog>
 
-  <dialog id="voiceDialog" class="voice-dialog">
-    <div class="voice-panel">
-      <button type="button" class="close-btn voice-close" data-close><i data-lucide="x"></i></button>
-      <div class="voice-brand"><span class="pulse-dot"></span><strong>שיחה עם מָלֵא</strong></div>
-      <div class="voice-copy"><span class="voice-state-label" id="voiceStateLabel">מוכנה</span><p id="voiceStatus">אפשר להתחיל לדבר</p><small id="voiceTranscript">בדיקה, הוספה, העברה, צריכה ועדכון — הכול בשיחה.</small></div>
-      <button id="voiceTalkBtn" class="voice-talk-btn" type="button" aria-label="התחלת הקלטה"><i data-lucide="mic"></i></button>
-      <p class="voice-hint">לחצו והחזיקו בזמן הדיבור · שחררו כדי לשלוח</p>
-      <div class="voice-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-      <button id="voiceTextBtn" class="voice-text-btn" type="button"><i data-lucide="keyboard"></i> מעבר לכתיבה</button>
-    </div>
-  </dialog>
 
   <div id="toast" class="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
