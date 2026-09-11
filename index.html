@@ -9,27 +9,43 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%231f5a43'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='white'%3Eמ%3C/text%3E%3C/svg%3E">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .quick-commands button{min-height:44px}
+    .icons-missing i[data-lucide]{display:none}.icons-missing #settingsBtn,.icons-missing .close-btn{width:auto;padding:0 10px}
+    .icons-missing #settingsBtn::after{content:'הגדרות'}.icons-missing .close-btn::after{content:'סגירה'}
+    .icons-missing #sendBtn::after{content:'שליחה'}.icons-missing #voiceTalkBtn::after{content:'דברו';font-weight:800}
+  </style>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">מ</span><div><strong>מָלֵא</strong><small>המלאי הביתי שלי</small></div></div>
-      <button class="icon-btn" id="settingsBtn" aria-label="הגדרות">⚙</button>
+      <button class="icon-btn" id="settingsBtn" aria-label="הגדרות"><i data-lucide="settings"></i></button>
     </header>
 
     <main>
-      <section class="hero">
-        <div><p class="eyebrow" id="greeting">מה יש בבית?</p><h1>הכול במקום.<br><em>הכול בשליטה.</em></h1></div>
-        <div class="hero-count"><strong id="totalItems">0</strong><span>פריטים במלאי</span></div>
-      </section>
-
-      <section class="command-card" aria-label="עוזר חכם">
-        <div class="assistant-head"><span class="pulse-dot"></span><div><strong>העוזר של מָלֵא</strong><small id="assistantStatus">אפשר לכתוב או לדבר אליי</small></div></div>
+      <section class="agent-surface" aria-labelledby="agentTitle">
+        <div class="assistant-head"><span class="pulse-dot"></span><div><strong>מָלֵא איתך</strong><small id="assistantStatus">מוכנה לעזור עם המלאי</small></div></div>
+        <div class="agent-intro">
+          <p class="eyebrow">הסוכנת הביתית שלך</p>
+          <h1 id="agentTitle">מה תרצו לעשות?</h1>
+          <p>אפשר פשוט לדבר. אני בודקת את המלאי וגם מעדכנת אותו בשבילכם.</p>
+        </div>
+        <button id="voiceModeBtn" class="voice-primary" type="button" aria-label="פתיחת שיחה קולית">
+          <span class="voice-orbit"><i data-lucide="mic"></i></span>
+          <span><strong>דברו איתי</strong><small>לחיצה לפתיחת שיחה קולית</small></span>
+        </button>
+        <div class="capabilities" aria-label="יכולות הסוכנת">
+          <span><i data-lucide="search"></i> לבדוק</span>
+          <span><i data-lucide="plus"></i> להוסיף</span>
+          <span><i data-lucide="move-left"></i> להעביר</span>
+          <span><i data-lucide="package-minus"></i> לצרוך ולעדכן</span>
+        </div>
         <div id="messages" class="messages" aria-live="polite"></div>
+        <p class="text-fallback-label"><i data-lucide="keyboard"></i> מעדיפים לכתוב?</p>
         <div class="command-row">
-          <button id="micBtn" class="mic-btn" aria-label="הקלטה קולית"><span>🎙</span></button>
-          <input id="commandInput" type="text" autocomplete="off" placeholder="למשל: הוספתי 2 קילו בשר טחון...">
-          <button id="sendBtn" class="send-btn" aria-label="שליחה">←</button>
+          <input id="commandInput" type="text" autocomplete="off" enterkeyhint="send" aria-label="פקודה כתובה" placeholder="למשל: מה יש במקפיא?">
+          <button id="sendBtn" class="send-btn" aria-label="שליחה"><i data-lucide="arrow-left"></i></button>
         </div>
         <div class="quick-commands">
           <button data-command="מה יש לי במקפיא?">מה יש במקפיא?</button>
@@ -37,12 +53,15 @@
         </div>
       </section>
 
-      <section class="stats-grid" id="statsGrid"></section>
+      <section class="inventory-summary" aria-label="תקציר מלאי">
+        <a href="#inventory" class="inventory-link"><span><i data-lucide="layout-list"></i><strong>למלאי הידני</strong></span><span><b id="totalItems">0</b> פריטים <i data-lucide="chevron-left"></i></span></a>
+        <div class="stats-grid" id="statsGrid"></div>
+      </section>
 
-      <section class="inventory-section">
-        <div class="section-head"><div><p class="eyebrow">המלאי שלי</p><h2>כל מה שיש בבית</h2></div><button class="primary-btn" id="addItemBtn">＋ פריט</button></div>
+      <section class="inventory-section" id="inventory">
+        <div class="section-head"><div><p class="eyebrow">המלאי שלי</p><h2>כל מה שיש בבית</h2></div><button class="primary-btn" id="addItemBtn"><i data-lucide="plus"></i> פריט</button></div>
         <div class="filters">
-          <label class="search"><span>⌕</span><input id="searchInput" placeholder="חיפוש במלאי"></label>
+          <label class="search"><i data-lucide="search"></i><input id="searchInput" placeholder="חיפוש במלאי"></label>
           <select id="storageFilter" aria-label="סינון לפי מקום"><option value="all">כל המקומות</option></select>
           <select id="categoryFilter" aria-label="סינון לפי קטגוריה"><option value="all">כל הסוגים</option></select>
         </div>
@@ -50,7 +69,7 @@
       </section>
 
       <section class="storage-section">
-        <div class="section-head"><div><p class="eyebrow">מקומות אחסון</p><h2>הבית שלי</h2></div><button class="text-btn" id="addStorageBtn">＋ מקום חדש</button></div>
+        <div class="section-head"><div><p class="eyebrow">מקומות אחסון</p><h2>הבית שלי</h2></div><button class="text-btn" id="addStorageBtn"><i data-lucide="plus"></i> מקום חדש</button></div>
         <div id="storageList" class="storage-list"></div>
       </section>
     </main>
@@ -58,7 +77,7 @@
 
   <dialog id="itemDialog">
     <form id="itemForm" method="dialog">
-      <div class="dialog-head"><div><p class="eyebrow">עדכון המלאי</p><h2 id="itemDialogTitle">פריט חדש</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">עדכון המלאי</p><h2 id="itemDialogTitle">פריט חדש</h2></div><button type="button" class="close-btn" data-close><i data-lucide="x"></i></button></div>
       <input type="hidden" id="itemId">
       <label>שם הפריט<input id="itemName" required placeholder="למשל בשר טחון"></label>
       <div class="form-grid"><label>כמות<input id="itemQuantity" type="number" min="0" step="any" required value="1"></label><label>יחידה<select id="itemUnit"><option>יחידות</option><option>ק״ג</option><option>גרם</option><option>ליטר</option><option>מארזים</option><option>מנות</option></select></label></div>
@@ -71,7 +90,7 @@
 
   <dialog id="storageDialog">
     <form id="storageForm" method="dialog">
-      <div class="dialog-head"><div><p class="eyebrow">הבית שלי</p><h2>מקום אחסון חדש</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">הבית שלי</p><h2>מקום אחסון חדש</h2></div><button type="button" class="close-btn" data-close><i data-lucide="x"></i></button></div>
       <label>שם המקום<input id="storageName" required placeholder="למשל המקפיא בחדר כביסה"></label>
       <label>סוג<select id="storageType"><option value="freezer">מקפיא</option><option value="fridge">מקרר</option><option value="pantry">ארון / מזווה</option><option value="other">אחר</option></select></label>
       <button class="submit-btn" value="default">הוספה</button>
@@ -80,7 +99,7 @@
 
   <dialog id="settingsDialog">
     <form id="settingsForm" method="dialog">
-      <div class="dialog-head"><div><p class="eyebrow">הגדרות</p><h2>OpenAI</h2></div><button type="button" class="close-btn" data-close>×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">הגדרות</p><h2>OpenAI</h2></div><button type="button" class="close-btn" data-close><i data-lucide="x"></i></button></div>
       <p class="help">המפתח נשמר רק בדפדפן הזה ונשלח ישירות ל‑OpenAI. אפשר גם לפתוח את האתר עם <code>?token=...</code>; הפרמטר יימחק מיד משורת הכתובת.</p>
       <label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="sk-..."></label>
       <label>מודל<input id="modelName" value="gpt-4.1-mini"></label>
@@ -89,7 +108,20 @@
     </form>
   </dialog>
 
+  <dialog id="voiceDialog" class="voice-dialog">
+    <div class="voice-panel">
+      <button type="button" class="close-btn voice-close" data-close><i data-lucide="x"></i></button>
+      <div class="voice-brand"><span class="pulse-dot"></span><strong>שיחה עם מָלֵא</strong></div>
+      <div class="voice-copy"><span class="voice-state-label" id="voiceStateLabel">מוכנה</span><p id="voiceStatus">אפשר להתחיל לדבר</p><small id="voiceTranscript">בדיקה, הוספה, העברה, צריכה ועדכון — הכול בשיחה.</small></div>
+      <button id="voiceTalkBtn" class="voice-talk-btn" type="button" aria-label="התחלת הקלטה"><i data-lucide="mic"></i></button>
+      <p class="voice-hint">לחיצה להתחלה · לחיצה נוספת לסיום</p>
+      <div class="voice-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <button id="voiceTextBtn" class="voice-text-btn" type="button"><i data-lucide="keyboard"></i> מעבר לכתיבה</button>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
