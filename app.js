@@ -4,7 +4,7 @@
   const SETTINGS_KEY = 'malai:settings:v1';
   const MODELS = Object.freeze({
     agent: 'gpt-5.6-luna',
-    transcription: 'gpt-4o-mini-transcribe',
+    transcription: 'gpt-4o-transcribe',
     speech: 'gpt-4o-mini-tts'
   });
   const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -228,7 +228,11 @@
       if(session!==voiceSession){stream.getTracks().forEach(t=>t.stop());return;} audioChunks=[];
       recorder=new MediaRecorder(stream); const recordingType=recorder.mimeType||'audio/webm'; recorder.ondataavailable=e=>e.data.size&&audioChunks.push(e.data);
       recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());recorder=null;if(session!==voiceSession)return;setBusy(true,'מתמללת את ההקלטה…');if(voiceMode)setVoiceState('transcribing');
-        try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData(); form.append('file',blob,'recording.webm'); form.append('model',MODELS.transcription); form.append('language','he');
+        try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData();
+          const extension=recordingType.includes('mp4')?'m4a':recordingType.includes('mpeg')?'mp3':recordingType.includes('ogg')?'ogg':'webm';
+          form.append('file',blob,`recording.${extension}`); form.append('model',MODELS.transcription); form.append('language','he');
+          const vocabulary=[...state.storages.map(s=>s.name),...state.items.slice(0,40).map(i=>i.name)].filter(Boolean).join(', ');
+          form.append('prompt',`מלאי מזון ביתי בעברית. פקודות לדוגמה: הוספתי שתי עגבניות למקרר; השתמשתי בקילו עוף; מה יש במקפיא? שמות מוכרים: ${vocabulary}`);
           const data=await openAI('audio/transcriptions',{method:'POST',body:form});if(session===voiceSession)await runCommand(data.text||'',{speak:voiceMode});
         } catch(err){if(session===voiceSession){addMessage(err.message);if(voiceMode)setVoiceState('error',err.message);}} finally{setBusy(false);} };
       recorder.start(); $('#assistantStatus').textContent='מקליטה… לחיצה נוספת לסיום';if(voiceMode)setVoiceState('recording');
