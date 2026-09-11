@@ -4,7 +4,6 @@
   const SETTINGS_KEY = 'malai:settings:v1';
   const MODELS = Object.freeze({
     agent: 'gpt-5.6-luna',
-    transcription: 'gpt-4o-transcribe',
     speech: 'gpt-4o-mini-tts'
   });
   const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -34,7 +33,7 @@
   });
   let state = loadJSON(DATA_KEY, null) || defaultState();
   let settings = loadJSON(SETTINGS_KEY, { apiKey:'' });
-  let recorder = null, audioChunks = [], currentAudio = null, audioUrl = '';
+  let recognition = null, recognitionTranscript = '', currentAudio = null, audioUrl = '';
   let voicePressActive = false;
   let voiceSession = 0;
   const activeControllers = new Set();
@@ -130,8 +129,8 @@
   }
   function cleanupVoice() {
     voicePressActive=false; voiceSession++; activeControllers.forEach(ctrl=>ctrl.abort()); activeControllers.clear();
-    if(recorder){recorder.ondataavailable=null;recorder.onstop=null;if(recorder.state==='recording')recorder.stop();recorder.stream?.getTracks().forEach(t=>t.stop());recorder=null;}
-    audioChunks=[];stopCurrentAudio();setBusy(false);setVoiceState('ready');
+    if(recognition){recognition.onresult=null;recognition.onend=null;recognition.onerror=null;recognition.abort();recognition=null;}
+    recognitionTranscript='';stopCurrentAudio();setBusy(false);setVoiceState('ready');
   }
 
   async function openAI(path, options) {
@@ -218,52 +217,25 @@
     return changed;
   }
 
-  function shouldUseWavRecorder() {
-    return /iP(?:hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  function submitRecognition(session) {
+    const text=recognitionTranscript.trim(); recognitionTranscript='';
+    if(session!==voiceSession)return;
+    if(!text){const message='לא שמעתי בבירור. נסו שוב או עברו לכתיבה.';setVoiceState('error',message);toast(message);return;}
+    setVoiceState('transcribing',text);runCommand(text,{speak:true});
   }
 
-  function wavBlob(chunks, sampleRate) {
-    const length=chunks.reduce((sum,chunk)=>sum+chunk.length,0), buffer=new ArrayBuffer(44+length*2), view=new DataView(buffer);
-    const text=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i));};
-    text(0,'RIFF');view.setUint32(4,36+length*2,true);text(8,'WAVE');text(12,'fmt ');view.setUint32(16,16,true);
-    view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);
-    view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,length*2,true);
-    let offset=44;
-    chunks.forEach(chunk=>chunk.forEach(value=>{const sample=Math.max(-1,Math.min(1,value));view.setInt16(offset,sample<0?sample*0x8000:sample*0x7fff,true);offset+=2;}));
-    return new Blob([buffer],{type:'audio/wav'});
-  }
-
-  function createWavRecorder(stream) {
-    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
-    const context=new AudioContextClass(), source=context.createMediaStreamSource(stream), processor=context.createScriptProcessor(4096,1,1), silence=context.createGain(), chunks=[];
-    silence.gain.value=0;
-    const api={stream,state:'inactive',mimeType:'audio/wav',ondataavailable:null,onstop:null,
-      start(){api.state='recording';processor.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));source.connect(processor);processor.connect(silence);silence.connect(context.destination);context.resume?.();},
-      stop(){if(api.state!=='recording')return;api.state='inactive';processor.disconnect();source.disconnect();silence.disconnect();processor.onaudioprocess=null;context.close?.();const data=wavBlob(chunks,context.sampleRate);api.ondataavailable?.({data});queueMicrotask(()=>api.onstop?.());}
-    };
-    return api;
-  }
-
-  async function toggleRecording(voiceMode=false) {
-    if(recorder?.state==='recording')return;
-    if(!navigator.mediaDevices?.getUserMedia||(!window.MediaRecorder&&!(window.AudioContext||window.webkitAudioContext))){
-      const message='הקלטה אינה נתמכת בדפדפן הזה. אפשר להשתמש בשורת הטקסט.'; toast(message); if(voiceMode)setVoiceState('error',message); return;
-    }
-    if(!settings.apiKey){const message='לתמלול קולי צריך מפתח OpenAI מקומי. אפשר לעבור לכתיבה בלי מפתח.';setVoiceState('error',message);toast(message);return;}
-    try {
-      stopCurrentAudio(); const session=voiceSession, stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      if(session!==voiceSession||(voiceMode&&!voicePressActive)){stream.getTracks().forEach(t=>t.stop());if(voiceMode)setVoiceState('ready');return;} audioChunks=[];
-      recorder=shouldUseWavRecorder()&&window.AudioContext?createWavRecorder(stream):new MediaRecorder(stream); const recordingType=recorder.mimeType||'audio/webm'; recorder.ondataavailable=e=>e.data.size&&audioChunks.push(e.data);
-      recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());recorder=null;if(session!==voiceSession)return;setBusy(true,'מתמללת את ההקלטה…');if(voiceMode)setVoiceState('transcribing');
-        try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData();
-          const extension=recordingType.includes('wav')?'wav':recordingType.includes('mp4')?'m4a':recordingType.includes('mpeg')?'mp3':recordingType.includes('ogg')?'ogg':'webm';
-          form.append('file',blob,`recording.${extension}`); form.append('model',MODELS.transcription); form.append('language','he');
-          const vocabulary=[...state.storages.map(s=>s.name),...state.items.slice(0,40).map(i=>i.name)].filter(Boolean).join(', ');
-          form.append('prompt',`מלאי מזון ביתי בעברית. פריזר פירושו מקפיא. פקודות לדוגמה: בפריזר יש שתי לחמניות המבורגר ושני המבורגרים; הוספתי שתי עגבניות למקרר; השתמשתי בקילו עוף; מה יש במקפיא? שמות מוכרים: ${vocabulary}`);
-          const data=await openAI('audio/transcriptions',{method:'POST',body:form});if(session===voiceSession)await runCommand(data.text||'',{speak:voiceMode});
-        } catch(err){if(session===voiceSession){addMessage(err.message);if(voiceMode)setVoiceState('error',err.message);}} finally{setBusy(false);} };
-      recorder.start(); $('#assistantStatus').textContent='מקליטה… שחררו כדי לשלוח';if(voiceMode)setVoiceState('recording');
-    } catch { const message='לא התקבלה הרשאה למיקרופון. אפשר להמשיך בכתיבה.';toast(message);if(voiceMode)setVoiceState('error',message); }
+  function startVoiceRecognition() {
+    if(recognition)return;
+    const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!Recognition){const message='זיהוי דיבור מובנה אינו נתמך בדפדפן הזה. אפשר להשתמש בשורת הטקסט.';setVoiceState('error',message);toast(message);return;}
+    if(!settings.apiKey){const message='כדי שהסוכנת תפעל צריך מפתח OpenAI מקומי. אפשר לעבור לכתיבה.';setVoiceState('error',message);toast(message);$('#settingsDialog').showModal();return;}
+    stopCurrentAudio();const session=voiceSession;recognitionTranscript='';recognition=new Recognition();
+    recognition.lang='he-IL';recognition.interimResults=true;recognition.continuous=true;
+    recognition.onstart=()=>{if(session!==voiceSession)return;if(!voicePressActive){recognition.stop();return;}$('#assistantStatus').textContent='מקשיבה… שחררו כדי לשלוח';setVoiceState('recording');};
+    recognition.onresult=e=>{recognitionTranscript=Array.from(e.results).map(result=>result[0]?.transcript||'').join(' ').trim();if(session===voiceSession)setVoiceState('recording',recognitionTranscript||'שחררו כדי לשלוח');};
+    recognition.onerror=e=>{if(session!==voiceSession||e.error==='aborted')return;const message=e.error==='not-allowed'?'צריך לאפשר גישה למיקרופון ב‑Safari.':'לא הצלחתי לזהות את הדיבור. נסו שוב.';recognition=null;setVoiceState('error',message);toast(message);};
+    recognition.onend=()=>{if(session!==voiceSession)return;recognition=null;if(!voicePressActive)submitRecognition(session);};
+    try{recognition.start();}catch{recognition=null;setVoiceState('error','לא הצלחתי להפעיל את זיהוי הדיבור. נסו שוב.');}
   }
 
   $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#settingsDialog').showModal(); };
@@ -282,19 +254,19 @@
     if(voicePressActive)return;
     voicePressActive=true;
     if(e.pointerId!==undefined)voiceTalkBtn.setPointerCapture?.(e.pointerId);
-    toggleRecording(true);
+    startVoiceRecognition();
   };
   const endVoicePress=e=>{
     if(!voicePressActive)return;
     e.preventDefault();
     voicePressActive=false;
-    if(recorder?.state==='recording')recorder.stop();
+    if(recognition)recognition.stop();else if(recognitionTranscript)submitRecognition(voiceSession);
   };
   voiceTalkBtn.addEventListener('pointerdown',startVoicePress);
   ['pointerup','pointercancel','lostpointercapture'].forEach(type=>voiceTalkBtn.addEventListener(type,endVoicePress));
   voiceTalkBtn.addEventListener('keydown',e=>{if(!e.repeat&&(e.key===' '||e.key==='Enter'))startVoicePress(e);});
   voiceTalkBtn.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')endVoicePress(e);});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&recorder)cleanupVoice();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&recognition)cleanupVoice();});
   $$('.quick-commands button').forEach(b=>b.onclick=()=>runCommand(b.dataset.command));
   if(incomingToken) setTimeout(()=>toast('מפתח OpenAI נשמר והוסר מהכתובת'),200);
   render(); refreshIcons();
