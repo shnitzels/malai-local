@@ -10,7 +10,7 @@ dialog{border:0;padding:0;background:var(--card);color:var(--ink);width:min(480p
 :root{--ink:#35153d;--muted:#826f85;--paper:#fff8fc;--card:#fffefe;--green:#681f70;--green-2:#3f124d;--lime:#f18be8;--line:#eaddea;--danger:#bd3f68;--shadow:0 24px 70px rgba(84,25,91,.2);--radius:16px}
 body{background:radial-gradient(circle at 8% 0,rgba(195,181,255,.42),transparent 30%),radial-gradient(circle at 100% 18%,rgba(255,190,221,.5),transparent 34%),linear-gradient(180deg,#fff9fd 0,#fbf2fb 100%)}
 .topbar{border-bottom-color:rgba(104,31,112,.1)}
-.brand-mark{border-radius:14px;background:linear-gradient(145deg,#8f36a0,#54155f);box-shadow:0 10px 24px rgba(104,31,112,.22)}
+.brand-mark{border-radius:14px;background:linear-gradient(145deg,#8f36a0,#54155f);box-shadow:0 10px 24px rgba(104,31,112,.22)}.brand-mark svg{width:24px;height:24px;stroke-width:2.3}
 .icon-btn,.close-btn{border-radius:14px;border-color:rgba(104,31,112,.14);color:var(--green);background:rgba(255,255,255,.78)}
 .agent-surface{border-radius:30px;background:radial-gradient(circle at 16% 10%,rgba(241,139,232,.22),transparent 32%),linear-gradient(145deg,#77277c 0,#4a1559 72%);box-shadow:0 28px 74px rgba(70,18,78,.26)}
 .pulse-dot{border-radius:50%;background:#f5a4ed;box-shadow:0 0 0 6px rgba(245,164,237,.15)}

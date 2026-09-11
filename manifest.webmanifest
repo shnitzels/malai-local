@@ -1,10 +1,10 @@
 {
-  "name": "מָלֵא — המלאי הביתי שלי",
-  "short_name": "מָלֵא",
+  "name": "מה בפריזר — המלאי הביתי שלי",
+  "short_name": "מה בפריזר",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f6f2e9",
-  "theme_color": "#1f5a43",
+  "theme_color": "#681f70",
   "lang": "he",
   "dir": "rtl"
 }
