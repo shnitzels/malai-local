@@ -2,6 +2,11 @@
   'use strict';
   const DATA_KEY = 'malai:data:v1';
   const SETTINGS_KEY = 'malai:settings:v1';
+  const MODELS = Object.freeze({
+    agent: 'gpt-5.6-luna',
+    transcription: 'gpt-4o-mini-transcribe',
+    speech: 'gpt-4o-mini-tts'
+  });
   const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
@@ -28,7 +33,7 @@
     updatedAt: new Date().toISOString()
   });
   let state = loadJSON(DATA_KEY, null) || defaultState();
-  let settings = loadJSON(SETTINGS_KEY, { apiKey:'', model:'gpt-4.1-mini' });
+  let settings = loadJSON(SETTINGS_KEY, { apiKey:'' });
   let recorder = null, audioChunks = [], currentAudio = null, audioUrl = '';
   let voiceSession = 0;
   const activeControllers = new Set();
@@ -144,7 +149,7 @@
     setVoiceState('speaking',text);
     const session=voiceSession, ctrl=new AbortController(), timer=setTimeout(()=>ctrl.abort(),45000); activeControllers.add(ctrl);
     try {
-      const res=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{Authorization:`Bearer ${settings.apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:'gpt-4o-mini-tts',voice:'coral',input:text,instructions:'דברי בעברית בקול חם, טבעי, ברור ותמציתי.',response_format:'mp3'}),signal:ctrl.signal});
+      const res=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{Authorization:`Bearer ${settings.apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({model:MODELS.speech,voice:'coral',input:text,instructions:'דברי בעברית בקול חם, טבעי, ברור ותמציתי.',response_format:'mp3'}),signal:ctrl.signal});
       if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error?.message||`שגיאת קול (${res.status})`);}
       const blob=await res.blob();
       if(session!==voiceSession)return; stopCurrentAudio(); audioUrl=URL.createObjectURL(blob); currentAudio=new Audio(audioUrl);
@@ -166,7 +171,7 @@
     const schema={name:'inventory_actions',strict:true,schema:{type:'object',additionalProperties:false,properties:{reply:{type:'string'},actions:{type:'array',items:{type:'object',additionalProperties:false,properties:{type:{type:'string',enum:['add_storage','add_item','consume_item','move_item','update_item','delete_item','none']},item_name:{type:'string'},quantity:{type:'number'},unit:{type:'string'},category:{type:'string'},storage_name:{type:'string'},destination_name:{type:'string'},storage_type:{type:'string',enum:['freezer','fridge','pantry','other']},note:{type:'string'}},required:['type','item_name','quantity','unit','category','storage_name','destination_name','storage_type','note']}}},required:['reply','actions']}};
     const system=`את עוזרת לניהול מלאי מזון ביתי בעברית. הפכי את בקשת המשתמש לפעולות מדויקות. אפשר להחזיר כמה פעולות. בשאלות מידע בלבד החזירי actions ריק ותשובה המבוססת אך ורק על המלאי. כשמוסיפים פריט למיקום שלא קיים, צרי קודם add_storage. כשאומרים השתמשתי/נגמר, consume_item מפחית כמות; אם לא נאמרה כמות השתמשי בכמות הקיימת כדי להסיר. קטגוריות מועדפות: מזון לבישול, מזון מוכן, ירקות ופירות, מוצרי חלב, לחם ומאפים, מזווה, אחר. אל תמציאי פריטים. מלאי נוכחי: ${JSON.stringify(inventory)}. מקומות: ${JSON.stringify(storages)}.`;
     try {
-      const data=await openAI('chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:settings.model||'gpt-4.1-mini',temperature:0.1,messages:[{role:'system',content:system},{role:'user',content:text}],response_format:{type:'json_schema',json_schema:schema}})});
+      const data=await openAI('chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODELS.agent,messages:[{role:'system',content:system},{role:'user',content:text}],response_format:{type:'json_schema',json_schema:schema}})});
       if(speak&&session!==voiceSession)return;
       const result=JSON.parse(data.choices?.[0]?.message?.content||'{}');
       const changed=applyActions(result.actions||[]);
@@ -223,19 +228,19 @@
       if(session!==voiceSession){stream.getTracks().forEach(t=>t.stop());return;} audioChunks=[];
       recorder=new MediaRecorder(stream); const recordingType=recorder.mimeType||'audio/webm'; recorder.ondataavailable=e=>e.data.size&&audioChunks.push(e.data);
       recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());recorder=null;if(session!==voiceSession)return;setBusy(true,'מתמללת את ההקלטה…');if(voiceMode)setVoiceState('transcribing');
-        try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData(); form.append('file',blob,'recording.webm'); form.append('model','gpt-4o-mini-transcribe'); form.append('language','he');
+        try { const blob=new Blob(audioChunks,{type:recordingType}), form=new FormData(); form.append('file',blob,'recording.webm'); form.append('model',MODELS.transcription); form.append('language','he');
           const data=await openAI('audio/transcriptions',{method:'POST',body:form});if(session===voiceSession)await runCommand(data.text||'',{speak:voiceMode});
         } catch(err){if(session===voiceSession){addMessage(err.message);if(voiceMode)setVoiceState('error',err.message);}} finally{setBusy(false);} };
       recorder.start(); $('#assistantStatus').textContent='מקליטה… לחיצה נוספת לסיום';if(voiceMode)setVoiceState('recording');
     } catch { const message='לא התקבלה הרשאה למיקרופון. אפשר להמשיך בכתיבה.';toast(message);if(voiceMode)setVoiceState('error',message); }
   }
 
-  $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#modelName').value=settings.model||'gpt-4.1-mini';$('#settingsDialog').showModal(); };
+  $('#addItemBtn').onclick=()=>openItem(); $('#addStorageBtn').onclick=()=>$('#storageDialog').showModal(); $('#settingsBtn').onclick=()=>{ $('#apiKey').value=settings.apiKey||'';$('#settingsDialog').showModal(); };
   $$('[data-close]').forEach(b=>b.onclick=()=>{const dialog=b.closest('dialog');if(dialog?.id==='voiceDialog')cleanupVoice();dialog.close();});
   $('#itemForm').onsubmit=e=>{e.preventDefault();const id=$('#itemId').value, item={id:id||uid(),name:$('#itemName').value.trim(),quantity:Number($('#itemQuantity').value),unit:$('#itemUnit').value,category:$('#itemCategory').value,storageId:$('#itemStorage').value,note:$('#itemNote').value.trim(),createdAt:new Date().toISOString()};const idx=state.items.findIndex(i=>i.id===id);if(idx>=0)state.items[idx]={...state.items[idx],...item};else state.items.unshift(item);$('#itemDialog').close();persist();toast('הפריט נשמר');};
   $('#storageForm').onsubmit=e=>{e.preventDefault();state.storages.push({id:uid(),name:$('#storageName').value.trim(),type:$('#storageType').value});e.target.reset();$('#storageDialog').close();persist();toast('המקום נוסף');};
-  $('#settingsForm').onsubmit=e=>{e.preventDefault();settings={apiKey:$('#apiKey').value.trim(),model:$('#modelName').value.trim()||'gpt-4.1-mini'};saveJSON(SETTINGS_KEY,settings);$('#settingsDialog').close();toast('ההגדרות נשמרו במכשיר');};
-  $('#clearDataBtn').onclick=()=>{if(confirm('למחוק את כל המלאי וההגדרות מהמכשיר הזה?')){localStorage.removeItem(DATA_KEY);localStorage.removeItem(SETTINGS_KEY);state=defaultState();settings={apiKey:'',model:'gpt-4.1-mini'};$('#settingsDialog').close();render();toast('הנתונים נמחקו');}};
+  $('#settingsForm').onsubmit=e=>{e.preventDefault();settings={apiKey:$('#apiKey').value.trim()};saveJSON(SETTINGS_KEY,settings);$('#settingsDialog').close();toast('ההגדרות נשמרו במכשיר');};
+  $('#clearDataBtn').onclick=()=>{if(confirm('למחוק את כל המלאי וההגדרות מהמכשיר הזה?')){localStorage.removeItem(DATA_KEY);localStorage.removeItem(SETTINGS_KEY);state=defaultState();settings={apiKey:''};render();$('#settingsDialog').close();toast('הנתונים נמחקו');}};
   $('#inventoryList').onclick=e=>{const row=e.target.closest('.item-row');if(!row)return;const item=state.items.find(i=>i.id===row.dataset.id),action=e.target.closest('button')?.dataset.action;if(action==='edit')openItem(item);if(action==='delete'&&confirm(`למחוק את ${item.name}?`)){state.items=state.items.filter(i=>i.id!==item.id);persist();}if(action==='consume'){const value=prompt(`כמה ${item.unit} השתמשת?`,String(item.quantity));if(value!==null){item.quantity=Math.max(0,item.quantity-Number(value||0));if(item.quantity===0)state.items=state.items.filter(i=>i.id!==item.id);persist();}}};
   ['searchInput','storageFilter','categoryFilter'].forEach(id=>$('#'+id).addEventListener(id==='searchInput'?'input':'change',render));
   $('#sendBtn').onclick=()=>runCommand($('#commandInput').value); $('#commandInput').onkeydown=e=>{if(e.key==='Enter')runCommand(e.target.value);};
