@@ -68,11 +68,20 @@
   const cloneState=()=>JSON.parse(JSON.stringify(state));
   function updateUndoButton(){const button=$('#undoBtn');if(button){button.disabled=!history.length;button.title=history.length?`ביטול: ${history[history.length-1].description}`:'אין שינוי לבטל';}}
   function rememberSnapshot(snapshot,description){history.push({state:snapshot,description,at:new Date().toISOString()});history=history.slice(-10);saveJSON(HISTORY_KEY,history);updateUndoButton();}
-  function describeActions(actions){return actions.filter(a=>a.type!=='none').map(a=>({add_storage:`הוספת מקום האחסון ${a.storage_name}`,add_item:`הוספת ${a.quantity||1} ${a.unit||'יחידות'} ${a.item_name}`,consume_item:`שימוש ב־${a.quantity||'כל הכמות של'} ${a.item_name}`,move_item:`העברת ${a.item_name} אל ${a.destination_name}`,update_item:`עדכון ${a.item_name}`,delete_item:`מחיקת ${a.item_name}`}[a.type])).filter(Boolean).join(', ')||'השינוי האחרון';}
+  function describeActions(actions){return actions.filter(a=>a.type!=='none').map(a=>({add_storage:`הוספת מקום האחסון ${a.storage_name}`,update_storage:`עריכת מקום האחסון ${a.storage_name}`,delete_storage:`מחיקת מקום האחסון ${a.storage_name}`,add_item:`הוספת ${a.quantity||1} ${a.unit||'יחידות'} ${a.item_name}`,consume_item:`שימוש ב־${a.quantity||'כל הכמות של'} ${a.item_name}`,move_item:`העברת ${a.item_name} אל ${a.destination_name}`,update_item:`עדכון ${a.item_name}`,delete_item:`מחיקת ${a.item_name}`}[a.type])).filter(Boolean).join(', ')||'השינוי האחרון';}
   function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
   function toast(text) { const el=$('#toast'); el.textContent=text; el.classList.add('show'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('show'),2600); }
   function storageById(id) { return state.storages.find(s=>s.id===id); }
-  function findStorage(value='') { const n=value.trim().toLowerCase(); return state.storages.find(s=>s.id===value || s.name.toLowerCase()===n || s.name.toLowerCase().includes(n) || n.includes(s.name.toLowerCase())); }
+  function findStorageByExactName(value='', excludingId='') {
+    const n=String(value).trim().toLowerCase(); if(!n)return undefined;
+    return state.storages.find(s=>s.id!==excludingId&&s.name.trim().toLowerCase()===n);
+  }
+  function findStorage(value='', {fuzzy=true}={}) {
+    const n=String(value).trim().toLowerCase(); if(!n)return undefined;
+    const exact=storageById(value)||findStorageByExactName(value);
+    if(exact||!fuzzy)return exact;
+    return state.storages.find(s=>s.name.toLowerCase().includes(n) || n.includes(s.name.toLowerCase()));
+  }
   function findItem(name='', storageName='') {
     const n=name.trim().toLowerCase(), store=findStorage(storageName);
     return state.items.find(i => (i.id===name || i.name.toLowerCase()===n || i.name.toLowerCase().includes(n) || n.includes(i.name.toLowerCase())) && (!store || i.storageId===store.id));
@@ -178,8 +187,8 @@
     if(speak)setVoiceState('thinking',text);
     const inventory=state.items.map(i=>({id:i.id,name:i.name,quantity:i.quantity,unit:i.unit,category:i.category,storage:storageById(i.storageId)?.name}));
     const storages=state.storages.map(s=>({id:s.id,name:s.name,type:s.type}));
-    const schema={name:'inventory_actions',strict:true,schema:{type:'object',additionalProperties:false,properties:{reply:{type:'string'},actions:{type:'array',items:{type:'object',additionalProperties:false,properties:{type:{type:'string',enum:['add_storage','add_item','consume_item','move_item','update_item','delete_item','none']},item_name:{type:'string'},quantity:{type:'number'},unit:{type:'string'},category:{type:'string'},storage_name:{type:'string'},destination_name:{type:'string'},storage_type:{type:'string',enum:['freezer','fridge','pantry','other']},note:{type:'string'}},required:['type','item_name','quantity','unit','category','storage_name','destination_name','storage_type','note']}}},required:['reply','actions']}};
-    const system=`את עוזרת לניהול מלאי מזון ביתי בעברית. הפכי את בקשת המשתמש לפעולות מדויקות. אפשר להחזיר כמה פעולות. בשאלות מידע בלבד החזירי actions ריק ותשובה המבוססת אך ורק על המלאי. כשמוסיפים פריט למיקום שלא קיים, צרי קודם add_storage. כשאומרים השתמשתי/נגמר, consume_item מפחית כמות; אם לא נאמרה כמות השתמשי בכמות הקיימת כדי להסיר. קטגוריות מועדפות: מזון לבישול, מזון מוכן, ירקות ופירות, מוצרי חלב, לחם ומאפים, מזווה, אחר. אל תמציאי פריטים. מלאי נוכחי: ${JSON.stringify(inventory)}. מקומות: ${JSON.stringify(storages)}.`;
+    const schema={name:'inventory_actions',strict:true,schema:{type:'object',additionalProperties:false,properties:{reply:{type:'string'},actions:{type:'array',items:{type:'object',additionalProperties:false,properties:{type:{type:'string',enum:['add_storage','update_storage','delete_storage','add_item','consume_item','move_item','update_item','delete_item','none']},item_name:{type:'string'},quantity:{type:'number'},unit:{type:'string'},category:{type:'string'},storage_name:{type:'string'},new_storage_name:{type:'string'},destination_name:{type:'string'},storage_type:{type:'string',enum:['freezer','fridge','pantry','other']},note:{type:'string'}},required:['type','item_name','quantity','unit','category','storage_name','new_storage_name','destination_name','storage_type','note']}}},required:['reply','actions']}};
+    const system=`את עוזרת לניהול מלאי מזון ביתי בעברית. הפכי את בקשת המשתמש לפעולות מדויקות. אפשר להחזיר כמה פעולות. בשאלות מידע בלבד החזירי actions ריק ותשובה המבוססת אך ורק על המלאי. יש לך כלים להוסיף, לערוך ולמחוק גם פריטים וגם מקומות אחסון. לעריכת שם או סוג מקום השתמשי ב־update_storage: השם הנוכחי ב־storage_name, השם החדש ב־new_storage_name והסוג ב־storage_type. שמות מקומות חייבים להיות ייחודיים; אם שם חדש כבר קיים, אל תבצעי את השינוי ובקשי שם אחר. למחיקת מקום השתמשי ב־delete_storage. אם יש בו פריטים, חובה לציין מקום קיים אחר ב־destination_name שאליו יועברו כולם לפני המחיקה; אם המשתמש לא ציין יעד, אל תמחקי ושאלי לאן להעביר אותם. כשמוסיפים פריט למיקום שלא קיים, צרי קודם add_storage. כשאומרים השתמשתי/נגמר, consume_item מפחית כמות; אם לא נאמרה כמות השתמשי בכמות הקיימת כדי להסיר. קטגוריות מועדפות: מזון לבישול, מזון מוכן, ירקות ופירות, מוצרי חלב, לחם ומאפים, מזווה, אחר. אל תמציאי פריטים או מקומות. מלאי נוכחי: ${JSON.stringify(inventory)}. מקומות: ${JSON.stringify(storages)}.`;
     try {
       const data=await openAI('chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODELS.agent,messages:[{role:'system',content:system},{role:'user',content:text}],response_format:{type:'json_schema',json_schema:schema}})});
       if(speak&&session!==voiceSession)return;
@@ -199,7 +208,25 @@
     for(const a of actions) {
       if(a.type==='none') continue;
       if(a.type==='add_storage') {
-        if(!findStorage(a.storage_name)){ state.storages.push({id:uid(),name:a.storage_name||'מקום חדש',type:a.storage_type||'other'}); changed=true; }
+        const name=String(a.storage_name||'').trim()||'מקום חדש';
+        if(!findStorageByExactName(name)){ state.storages.push({id:uid(),name,type:a.storage_type||'other'}); changed=true; }
+      }
+      if(a.type==='update_storage') {
+        const s=findStorage(a.storage_name); if(!s)continue;
+        const newName=(a.new_storage_name||'').trim();
+        if(newName&&findStorageByExactName(newName,s.id))continue;
+        const nameChanged=newName&&newName!==s.name, typeChanged=storageMeta[a.storage_type]&&a.storage_type!==s.type;
+        if(nameChanged)s.name=newName;
+        if(typeChanged)s.type=a.storage_type;
+        if(nameChanged||typeChanged)changed=true;
+      }
+      if(a.type==='delete_storage') {
+        const s=findStorage(a.storage_name); if(!s)continue;
+        const items=state.items.filter(i=>i.storageId===s.id);
+        const destination=findStorage(a.destination_name);
+        if(items.length&&(!destination||destination.id===s.id))continue;
+        if(destination)items.forEach(i=>{i.storageId=destination.id;});
+        state.storages=state.storages.filter(x=>x.id!==s.id);changed=true;
       }
       if(a.type==='add_item') {
         let s=findStorage(a.storage_name);
